@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    container_name: notice_saathi_api
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://saathi:saathipass@postgres:5432/noticesaathi
+      - GNANI_API_KEY=${GNANI_API_KEY}
+      - GOOGLE_TRANSLATE_API_KEY=${GOOGLE_TRANSLATE_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - TRANSLATION_PROVIDER=${TRANSLATION_PROVIDER}
+      - STORAGE_LOCAL_DIR=/app/data/storage
+    volumes:
+      - storage_data:/app/data/storage
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    container_name: notice_saathi_web
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: notice_saathi_db
+    environment:
+      - POSTGRES_USER=saathi
+      - POSTGRES_PASSWORD=saathipass
+      - POSTGRES_DB=noticesaathi
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  storage_data:
+  pg_data:
+
