@@ -104,12 +104,14 @@ def health_check(db: Session = Depends(get_db)):
     storage_ok = True
     try:
         import os
+        import uuid
         from pathlib import Path
         storage_path = Path(settings.STORAGE_LOCAL_DIR)
         storage_path.mkdir(parents=True, exist_ok=True)
-        test_file = storage_path / ".health_check.tmp"
+        test_file = storage_path / f".health_check_{uuid.uuid4().hex[:8]}.tmp"
         test_file.write_text("probe")
-        test_file.unlink()
+        if test_file.exists():
+            test_file.unlink()
     except Exception:
         storage_ok = False
 

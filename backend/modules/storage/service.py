@@ -16,7 +16,8 @@ class StorageService:
         
     def _safe_resolve(self, parent: Path, filename: str) -> Path:
         resolved = (parent / filename).resolve()
-        if not str(resolved).startswith(str(parent)):
+        parent_resolved = parent.resolve()
+        if not (resolved == parent_resolved or resolved.is_relative_to(parent_resolved)):
             raise HTTPException(status_code=400, detail="Invalid storage path detected.")
         return resolved
 

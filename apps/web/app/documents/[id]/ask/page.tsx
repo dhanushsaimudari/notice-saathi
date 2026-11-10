@@ -135,6 +135,7 @@ export default function AskQuestionPage() {
         recognition.maxAlternatives = 1;
 
         let finalTranscript = "";
+        let capturedTranscript = "";
 
         recognition.onstart = () => {
           setIsRecording(true);
@@ -154,8 +155,9 @@ export default function AskQuestionPage() {
               interim += transcript;
             }
           }
-          const currentText = finalTranscript || interim;
+          const currentText = (finalTranscript || interim).trim();
           if (currentText) {
+            capturedTranscript = currentText;
             setQuestionText(currentText);
           }
         };
@@ -182,9 +184,10 @@ export default function AskQuestionPage() {
             recordingTimeoutRef.current = null;
           }
           setIsRecording(false);
-          if (finalTranscript && finalTranscript.trim()) {
-            setQuestionText(finalTranscript);
-            handleAsk(finalTranscript);
+          const textToSubmit = (finalTranscript || capturedTranscript).trim();
+          if (textToSubmit) {
+            setQuestionText(textToSubmit);
+            handleAsk(textToSubmit);
           }
         };
 

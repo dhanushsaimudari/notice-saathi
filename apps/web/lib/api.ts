@@ -253,6 +253,7 @@ class ApiClient {
       headers: {
         ...this.getHeaders(),
         "Content-Type": "application/json",
+        "consent-gnani-tts": "true",
       },
       body: JSON.stringify({
         text,
