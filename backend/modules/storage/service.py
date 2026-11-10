@@ -54,14 +54,15 @@ class StorageService:
         return dest.read_bytes()
 
     def delete_document_assets(self, storage_key: str, page_keys: list[str] = None, audio_keys: list[str] = None):
+        failed_files = []
         # 1. Original
         try:
             dest = self._safe_resolve(self.originals_dir, storage_key)
             if dest.exists():
                 dest.unlink()
-        except Exception:
-            pass
-            
+        except Exception as e:
+            failed_files.append((storage_key, str(e)))
+
         # 2. Pages
         if page_keys:
             for pk in page_keys:
@@ -69,9 +70,9 @@ class StorageService:
                     p = self._safe_resolve(self.pages_dir, pk)
                     if p.exists():
                         p.unlink()
-                except Exception:
-                    pass
-                    
+                except Exception as e:
+                    failed_files.append((pk, str(e)))
+
         # 3. Audio
         if audio_keys:
             for ak in audio_keys:
@@ -79,8 +80,11 @@ class StorageService:
                     a = self._safe_resolve(self.audio_dir, ak)
                     if a.exists():
                         a.unlink()
-                except Exception:
-                    pass
+                except Exception as e:
+                    failed_files.append((ak, str(e)))
+
+        if failed_files:
+            raise IOError(f"Failed to delete {len(failed_files)} asset file(s): {[f[0] for f in failed_files]}")
 
 storage_service = StorageService()
 

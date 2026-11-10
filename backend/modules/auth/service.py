@@ -138,18 +138,25 @@ def get_or_create_guest_session(
             
     return session
 
-def get_current_actor_id(
+def get_current_session(
     db: Session,
     authorization: str | None = None,
     x_session_token: str | None = None
-) -> str:
+) -> GuestSession:
     token = None
     if x_session_token:
         token = x_session_token
     elif authorization and authorization.startswith("Bearer "):
         token = authorization.split("Bearer ")[1].strip()
         
-    session = get_or_create_guest_session(db, token)
+    return get_or_create_guest_session(db, token)
+
+def get_current_actor_id(
+    db: Session,
+    authorization: str | None = None,
+    x_session_token: str | None = None
+) -> str:
+    session = get_current_session(db, authorization, x_session_token)
     return session.session_id
 
 def verify_document_ownership(db: Session, document_id: str, actor_id: str) -> Document:

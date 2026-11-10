@@ -12,15 +12,70 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Global Mobile-First Layout & Anti-Overflow Rules */
+html,
+:root {
+  overflow-x: hidden;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+/* Accessible Scalable Root Typography (WCAG 1.4.4 Resize text / 1.4.12 Text spacing) */
+html[data-text-size="normal"],
+:root[data-text-size="normal"] {
+  font-size: 16px;
+}
+
+html[data-text-size="large"],
+:root[data-text-size="large"] {
+  font-size: 19px;
+}
+
+html[data-text-size="extra-large"],
+:root[data-text-size="extra-large"] {
+  font-size: 22px;
+}
+
+/* Fallback class/attribute scaling for containers */
+[data-text-size="normal"] {
+  --app-font-scale: 1;
+}
+
+[data-text-size="large"] {
+  --app-font-scale: 1.1875;
+}
+
+[data-text-size="extra-large"] {
+  --app-font-scale: 1.375;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  line-height: 1.5;
+  width: 100%;
+}
+
+/* High contrast mode accessibility */
+html.high-contrast,
+html[data-high-contrast="true"],
+.high-contrast {
+  background-color: #000000 !important;
+  color: #fde047 !important;
+}
+
+html.high-contrast body,
+html[data-high-contrast="true"] body {
+  background-color: #000000 !important;
+  color: #fde047 !important;
+}
+
+/* Focus styles for keyboard navigation accessibility (WCAG 2.4.7 Focus Visible) */
+:focus-visible {
+  outline: 3px solid #facc15;
+  outline-offset: 2px;
 }

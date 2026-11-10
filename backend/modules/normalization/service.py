@@ -8,11 +8,12 @@ def normalize_whitespace(text: str) -> str:
 def normalize_currency(raw_val: str) -> str:
     """Standardizes Indian currency representations to ₹ format without changing amount."""
     cleaned = raw_val.strip()
-    # Match patterns like Rs. 50,000/- or INR 50000 or ₹ 50,000
-    m = re.search(r'(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)(?:\s*/-)?', cleaned, re.IGNORECASE)
+    # Match patterns like Rs. 50,000/- or INR 50000 or ₹ 50,000 or plain 6,250.00
+    m = re.search(r'(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*/-)?', cleaned, re.IGNORECASE)
     if m:
         num_part = m.group(1).strip()
-        return f"₹{num_part}"
+        if num_part and any(c.isdigit() for c in num_part):
+            return f"₹{num_part}"
     return raw_val
 
 def normalize_date(raw_val: str) -> str:

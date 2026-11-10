@@ -3,7 +3,7 @@
 import React, { useState, useRef } from "react";
 import { ActionCardData, api } from "@/lib/api";
 import { useAccessibility } from "@/lib/accessibility";
-import { Volume2, VolumeX, RotateCcw, AlertTriangle, CheckCircle2, FileSearch, HelpCircle } from "lucide-react";
+import { Volume2, VolumeX, AlertTriangle, CheckCircle2, FileSearch, HelpCircle } from "lucide-react";
 
 interface ActionCardProps {
   card: ActionCardData;
@@ -92,7 +92,7 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
   };
 
   return (
-    <div className={`${cardStyle} rounded-2xl p-6 sm:p-7 mb-6 transition-all`} role="region" aria-label={card.title}>
+    <div className={`${cardStyle} rounded-2xl p-4 sm:p-7 mb-4 sm:mb-6 transition-all w-full min-w-0`} role="region" aria-label={card.title}>
       {/* Hidden HTML5 Audio Element */}
       <audio
         ref={audioRef}
@@ -102,9 +102,9 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
       />
 
       {/* Header and Voice Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-200/50">
-        <div className="flex items-center gap-3">
-          <div className={`p-2.5 rounded-xl text-white flex items-center justify-center ${
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 border-b border-slate-200/50">
+        <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+          <div className={`p-2 sm:p-2.5 rounded-xl text-white flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
             isConflicting
               ? "bg-rose-600"
               : isPageUnreadable || isUncertain
@@ -113,11 +113,11 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
               ? "bg-slate-600"
               : "bg-emerald-600"
           }`}>
-            {isSuccess ? <CheckCircle2 className="w-6 h-6" /> : isNoAction ? <HelpCircle className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+            {isSuccess ? <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" /> : isNoAction ? <HelpCircle className="w-5 h-5 sm:w-6 sm:h-6" /> : <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6" />}
           </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight">{card.title}</h2>
-            <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-md mt-1 ${
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight break-words">{card.title}</h2>
+            <span className={`inline-block text-xs font-bold px-2 py-0.5 rounded-md mt-1 break-words ${
               isConflicting
                 ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
                 : isPageUnreadable
@@ -142,11 +142,11 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
         </div>
 
         {/* Audio Controls */}
-        <div className="flex items-center flex-wrap gap-2">
+        <div className="flex items-center flex-wrap gap-2 shrink-0">
           <button
             onClick={playSpeech}
             disabled={isLoadingAudio}
-            className={`min-h-[48px] px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 focus:ring-4 focus:ring-yellow-400 transition-all ${
+            className={`min-h-[48px] px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center gap-2 focus:ring-4 focus:ring-yellow-400 text-sm sm:text-base transition-all ${
               highContrast
                 ? "bg-yellow-400 text-black hover:bg-yellow-300"
                 : "bg-emerald-600 hover:bg-emerald-700 text-white"
@@ -156,27 +156,27 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
             {isLoadingAudio ? (
               <span className="animate-spin">⏳</span>
             ) : isPlaying ? (
-              <VolumeX className="w-5 h-5" />
+              <VolumeX className="w-5 h-5 shrink-0" />
             ) : (
-              <Volume2 className="w-5 h-5" />
+              <Volume2 className="w-5 h-5 shrink-0" />
             )}
             <span>{isLoadingAudio ? "Loading..." : isPlaying ? t.stop : t.listen}</span>
           </button>
 
           {/* Speed Selector */}
-          <div className="flex items-center rounded-lg border border-slate-300 overflow-hidden min-h-[48px] text-xs font-bold">
+          <div className="flex items-center rounded-lg border border-slate-300 dark:border-zinc-700 overflow-hidden min-h-[48px] text-xs font-bold shrink-0">
             {[0.85, 1.0, 1.15].map((s) => (
               <button
                 key={s}
                 onClick={() => handleSpeedChange(s)}
-                className={`px-2.5 py-2 min-h-[48px] focus:ring-2 focus:ring-yellow-400 ${
+                className={`px-2.5 py-2 min-h-[48px] focus:ring-2 focus:ring-yellow-400 transition-colors ${
                   speechSpeed === s
                     ? highContrast
                       ? "bg-yellow-400 text-black"
                       : "bg-slate-800 text-white"
                     : highContrast
                     ? "bg-zinc-900 text-yellow-300"
-                    : "bg-slate-100 text-slate-700"
+                    : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
                 title={`Speed ${s}x`}
               >
@@ -188,43 +188,43 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
       </div>
 
       {/* Section 1: What it says (Exact original excerpt) */}
-      <div className="mt-5">
-        <h3 className="text-sm sm:text-base font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 opacity-90">
+      <div className="mt-4 sm:mt-5">
+        <h3 className="text-xs sm:text-sm md:text-base font-bold uppercase tracking-wider mb-1.5 sm:mb-2 flex items-center gap-1.5 opacity-90">
           <span>{t.whatItSays}</span>
         </h3>
-        <div className={`${excerptStyle} p-4 rounded-xl text-base sm:text-lg font-serif italic`}>
+        <div className={`${excerptStyle} p-3.5 sm:p-4 rounded-xl text-sm sm:text-base md:text-lg font-serif italic leading-relaxed break-words`}>
           "{card.what_says}"
         </div>
       </div>
 
       {/* Section 2: What it means (Simple explanation) */}
-      <div className="mt-5">
-        <h3 className="text-sm sm:text-base font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 opacity-90">
+      <div className="mt-4 sm:mt-5">
+        <h3 className="text-xs sm:text-sm md:text-base font-bold uppercase tracking-wider mb-1.5 sm:mb-2 flex items-center gap-1.5 opacity-90">
           <span>{t.whatItMeans}</span>
         </h3>
-        <div className={`${meansStyle} p-4 rounded-xl text-base sm:text-lg font-medium leading-relaxed`}>
+        <div className={`${meansStyle} p-3.5 sm:p-4 rounded-xl text-sm sm:text-base md:text-lg font-medium leading-relaxed break-words`}>
           {card.what_means}
         </div>
       </div>
 
       {/* Section 3: What to do next (Explicit action only) */}
-      <div className="mt-5">
-        <h3 className="text-sm sm:text-base font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 opacity-90">
+      <div className="mt-4 sm:mt-5">
+        <h3 className="text-xs sm:text-sm md:text-base font-bold uppercase tracking-wider mb-1.5 sm:mb-2 flex items-center gap-1.5 opacity-90">
           <span>{t.whatToDo}</span>
         </h3>
-        <div className={`${actionStyle} p-4 rounded-xl text-base sm:text-lg font-bold leading-relaxed`}>
+        <div className={`${actionStyle} p-3.5 sm:p-4 rounded-xl text-sm sm:text-base md:text-lg font-bold leading-relaxed break-words`}>
           {card.what_action}
         </div>
       </div>
 
       {/* Section 4: What is uncertain (if any) */}
       {card.uncertainty && (
-        <div className="mt-5">
-          <h3 className="text-sm sm:text-base font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-amber-500">
-            <AlertTriangle className="w-5 h-5" />
+        <div className="mt-4 sm:mt-5">
+          <h3 className="text-xs sm:text-sm md:text-base font-bold uppercase tracking-wider mb-1.5 sm:mb-2 flex items-center gap-1.5 text-amber-500">
+            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
             <span>{t.whatIsUncertain}</span>
           </h3>
-          <div className={`${uncertainStyle} p-4 rounded-xl text-base sm:text-lg font-medium`}>
+          <div className={`${uncertainStyle} p-3.5 sm:p-4 rounded-xl text-sm sm:text-base md:text-lg font-medium leading-relaxed break-words`}>
             {card.uncertainty}
           </div>
         </div>
@@ -232,16 +232,16 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
 
       {/* Section 5: Proof Link / Button */}
       {card.proof_refs && card.proof_refs.length > 0 && (
-        <div className="mt-6 pt-4 border-t border-slate-200/50 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-5 sm:mt-6 pt-3.5 sm:pt-4 border-t border-slate-200/50 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
           <button
             onClick={() => onViewProof && onViewProof(card.proof_refs)}
-            className={`min-h-[48px] px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 focus:ring-4 focus:ring-yellow-400 ${
+            className={`min-h-[48px] px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-xl font-bold flex items-center gap-2 focus:ring-4 focus:ring-yellow-400 text-sm sm:text-base transition-colors ${
               highContrast
                 ? "bg-zinc-900 border-2 border-yellow-400 text-yellow-300 hover:bg-zinc-800"
                 : "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200"
             }`}
           >
-            <FileSearch className="w-5 h-5 text-indigo-600" />
+            <FileSearch className="w-5 h-5 text-indigo-600 shrink-0" />
             <span>{t.viewProof}</span>
           </button>
 
@@ -253,4 +253,3 @@ export default function ActionCardComponent({ card, onViewProof }: ActionCardPro
     </div>
   );
 }
-

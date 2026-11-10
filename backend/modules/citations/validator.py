@@ -198,7 +198,16 @@ def validate_claims_and_evidence(
                 # If claim specifically asserts a date, the block MUST contain that date or components
                 date_match = True
                 if claim_dates:
-                    date_match = any(cd in block.text_original for cd in claim_dates)
+                    from backend.modules.normalization.service import normalize_date
+                    block_dates = re.findall(r'\b\d{1,2}[-/]\d{1,2}[-/]\d{4}\b|\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b', block.text_original)
+                    norm_block_dates = [normalize_date(bd) for bd in block_dates]
+                    date_match = any(cd in block.text_original or cd in norm_block_dates for cd in claim_dates)
+                    if not date_match:
+                        for cd in claim_dates:
+                            parts = re.split(r'[-/]', cd)
+                            if len(parts) == 3 and parts[0] in block.text_original and parts[2] in block.text_original:
+                                date_match = True
+                                break
                 
                 # Word overlap
                 block_words = set(re.findall(r'\b\w{3,}\b', block_text_lower))

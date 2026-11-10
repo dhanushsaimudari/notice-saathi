@@ -1,0 +1,45 @@
+# Git & Documentation
+.git/
+.github/
+docs/
+*.md
+
+# Virtual environments & Dependencies
+venv/
+node_modules/
+apps/web/node_modules/
+
+# Next.js & Build Artifacts
+.next/
+apps/web/.next/
+out/
+dist/
+build/
+
+# Python Cache & Testing
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+tests/
+
+# Storage & Secrets
+.env
+.env.*
+data/storage/
+*.db
+*.sqlite
+*.sqlite3
+*.wav
+*.mp3
+
+# Scratch & Logs
+scratch/
+logs/
+*.log
+

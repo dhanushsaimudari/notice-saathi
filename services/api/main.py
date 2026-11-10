@@ -1,5 +1,7 @@
 import io
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Header, status, Response
+import logging
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Header, status, Response, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
@@ -10,6 +12,7 @@ from backend.database.session import get_db, init_db
 from backend.database.models import Document, ActionCard, TextBlock, ExtractedFact
 from backend.modules.auth.service import (
     get_or_create_guest_session,
+    get_current_session,
     get_current_actor_id,
     verify_document_ownership,
     record_consent,
@@ -23,7 +26,10 @@ from backend.modules.answers.service import answer_user_question
 from backend.modules.gnani_stt.adapter import gnani_stt_adapter
 from backend.modules.gnani_tts.adapter import gnani_tts_adapter
 
-# Initialize DB tables
+logger = logging.getLogger("noticesaathi.api")
+
+# Initialize DB tables and run startup configuration validation
+settings.validate_production_configuration()
 init_db()
 
 app = FastAPI(
@@ -34,11 +40,31 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["*"] if settings.ENVIRONMENT.lower() in ["development", "dev", "local", "test"] else settings.CORS_ALLOWED_ORIGINS,
+    allow_credentials=True if settings.ENVIRONMENT.lower() in ["development", "dev", "local", "test"] else settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# @app.exception_handler(Exception)
+def safe_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    if settings.DEBUG:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Internal Server Error",
+                "detail": str(exc),
+                "type": type(exc).__name__
+            }
+        )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "INTERNAL_SERVER_ERROR",
+            "message": "An internal server error occurred. Please try again later or contact support."
+        }
+    )
 
 # --- Pydantic Schemas ---
 
@@ -176,9 +202,14 @@ async def upload_document(
     consent_document_processing: Optional[bool] = Form(None),
     authorization: Optional[str] = Header(None),
     x_session_token: Optional[str] = Header(None),
+    response: Response = None,
     db: Session = Depends(get_db)
 ):
-    actor_id = get_current_actor_id(db, authorization, x_session_token)
+    guest_session = get_current_session(db, authorization, x_session_token)
+    actor_id = guest_session.session_id
+    if response:
+        response.headers["X-Session-Token"] = guest_session.token
+        response.headers["Access-Control-Expose-Headers"] = "X-Session-Token"
     
     # Backend consent enforcement for server-side document processing
     if consent_document_processing is True:
@@ -215,7 +246,8 @@ async def upload_document(
         "document_id": processed_doc.document_id,
         "state": processed_doc.state,
         "original_filename": processed_doc.original_filename,
-        "page_count": processed_doc.page_count
+        "page_count": processed_doc.page_count,
+        "session_token": guest_session.token
     }
 
 @app.get("/api/v1/documents")
@@ -276,9 +308,14 @@ def get_document_status(
     document_id: str,
     authorization: Optional[str] = Header(None),
     x_session_token: Optional[str] = Header(None),
+    response: Response = None,
     db: Session = Depends(get_db)
 ):
-    actor_id = get_current_actor_id(db, authorization, x_session_token)
+    guest_session = get_current_session(db, authorization, x_session_token)
+    actor_id = guest_session.session_id
+    if response:
+        response.headers["X-Session-Token"] = guest_session.token
+        response.headers["Access-Control-Expose-Headers"] = "X-Session-Token"
     doc = verify_document_ownership(db, document_id, actor_id)
     
     message = "Document is ready."

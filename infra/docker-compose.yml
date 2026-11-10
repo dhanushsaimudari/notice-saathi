@@ -10,6 +10,9 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
+      - DEBUG=false
+      - SECRET_KEY=${SECRET_KEY}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-https://noticesaathi.local}
       - DATABASE_URL=postgresql://saathi:saathipass@postgres:5432/noticesaathi
       - GNANI_API_KEY=${GNANI_API_KEY}
       - GOOGLE_TRANSLATE_API_KEY=${GOOGLE_TRANSLATE_API_KEY}
@@ -33,6 +36,25 @@ services:
       - NEXT_PUBLIC_API_URL=http://api:8000/api/v1
     depends_on:
       - api
+    restart: unless-stopped
+
+  retention-worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.api
+    container_name: notice_saathi_retention
+    command: python scripts/cleanup_expired_documents.py --daemon --interval-seconds 3600 --hours 48
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - DATABASE_URL=postgresql://saathi:saathipass@postgres:5432/noticesaathi
+      - STORAGE_LOCAL_DIR=/app/data/storage
+      - RETENTION_HOURS=48
+      - SECRET_KEY=${SECRET_KEY}
+    volumes:
+      - storage_data:/app/data/storage
+    depends_on:
+      - postgres
     restart: unless-stopped
 
   postgres:

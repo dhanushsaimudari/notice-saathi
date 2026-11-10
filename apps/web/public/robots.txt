@@ -1,0 +1,11 @@
+# robots.txt for NoticeSaathi
+User-agent: *
+Allow: /
+Allow: /privacy
+Allow: /history
+Disallow: /documents/
+Disallow: /upload
+Disallow: /api/
+
+Sitemap: https://noticesaathi.org/sitemap.xml
+

@@ -1,100 +1,275 @@
-# NoticeSaathi — Architectural Design Document
+# NoticeSaathi — Architectural Design & System Documentation
+
+> **Core Product Promise: Proof before explanation. Never invent what the evidence does not support.**
+
+---
 
 ## 1. System Mission & Philosophy
 
-NoticeSaathi is an evidence-first, accessible document comprehension companion engineered specifically for older adults, individuals with low vision, deaf or hard-of-hearing citizens, and people facing language or literacy barriers.
+NoticeSaathi is an evidence-first, voice-enabled document comprehension companion engineered specifically for older adults, individuals with low vision, deaf or hard-of-hearing citizens, and people facing language or literacy barriers.
 
-The foundational principle of NoticeSaathi is:
-> **PROOF BEFORE EXPLANATION. NEVER INVENT WHAT THE EVIDENCE DOES NOT SUPPORT.**
-
-Unlike generic conversational bots that extrapolate or generate plausible-sounding assumptions, NoticeSaathi enforces strict deterministic checks: every claim must resolve to verified passages in the user's document, high-impact facts (dates, amounts, legal sections, directives) are checked individually, and the system abstains or marks information as uncertain when text is unclear.
+Unlike generic conversational AI assistants that extrapolate or hallucinate, NoticeSaathi enforces strict deterministic checks: every claim must resolve to verified bounding-box passages in the user's document, high-impact facts (dates, amounts, legal sections, directives) are validated individually, and the system abstains or marks information as uncertain when evidence is absent, ambiguous, or contradictory.
 
 ---
 
-## 2. Three-Source Evidence Model
-
-The application strictly separates three distinct classes of information:
-
-| Information Class | Source | Permitted Use | Strict Boundary |
-| :--- | :--- | :--- | :--- |
-| **Document Evidence** | Visible text and bounding boxes from the uploaded PDF or photograph. | Primary evidence for what the notice states. | Not treated as proof that the document is authentic or legally binding. |
-| **User Context** | User's spoken/typed statements (e.g. "My neighbour said this was from court"). | Helps focus retrieval query and determine user intent. | **NEVER** treated as proof of document facts. Cannot supply a missing date or case number. |
-| **Approved External Reference** | Authoritative statutory definitions with verified jurisdiction and effective date. | Clarify legal sections cited in the notice. | Unverified statutory citations default to an explicit disclaimer stating the meaning cannot be confirmed. |
-
----
-
-## 3. End-to-End Processing Pipeline
+## 2. System Context Diagram
 
 ```mermaid
 flowchart TD
-    A["User Upload / Capture"] --> B["Upload Security Check<br/>Magic Bytes, Size, Format, SHA-256"]
-    B --> C["Private Storage<br/>(Local / S3 Isolated Bucket)"]
-    C --> D["Image Quality Gate<br/>Laplacian Blur, Low-Res, Glare, Cropped Edge"]
-    D -->|Fails Quality| E["State: NEEDS_RECAPTURE<br/>Actionable Recapture Prompt"]
-    D -->|Passes Quality| F["Text Extraction<br/>Native PDF / OCR Engine"]
-    F --> G["Text Normalization & Block Indexing<br/>Bounding Boxes & Provenance Metadata"]
-    G --> H["Candidate Fact Extractor<br/>Dates, Amounts, Parties, Case Nos, Statutes, Directives"]
-    H --> I["Citation Validator & Hallucination Guard<br/>100% Citation Integrity, Contradiction Check, Prompt Injection Defense"]
-    I --> J["Action Cards with Proof Generation<br/>What It Says | What It Means | What To Do | What Is Uncertain"]
-    J --> K["Delivery Layer<br/>Accessible PWA + Gnani Prisma STT / Timbre TTS"]
+    User["Citizen / Older Adult User"] -->|Uploads Notice (PDF / JPG / PNG)| WebApp["Next.js 15 Web Application\n(Port 3000 / Cloud Run)"]
+    User -->|Voice / Text Questions in Telugu / English| WebApp
+
+    subgraph TrustBoundary["NoticeSaathi Secure Processing Boundary"]
+        WebApp -->|REST API Calls (X-Session-Token)| APIService["FastAPI Backend Service\n(Port 8000 / Cloud Run)"]
+        APIService --> DB[(Database\nSQLite / PostgreSQL)]
+        APIService --> Storage["Private Encrypted Storage\n(Local / Google Cloud Storage)"]
+        APIService --> OCR["RapidOCR ONNX Engine\n(Local In-Memory Inference)"]
+        APIService --> GroundedQA["Grounded Q&A Engine\n(Case F Conflict Logic & Citations)"]
+    end
+
+    subgraph ExternalGateways["External Services (Strict Affirmative Consent Required)"]
+        APIService -->|Explicit Voice Consent| GnaniSTT["Gnani Prisma v2.5 STT\n(POST https://api.vachana.ai/stt/v3)"]
+        APIService -->|Explicit Voice Consent| GnaniTTS["Gnani Timbre v2.5 TTS\n(POST https://api.vachana.ai/api/v1/tts/inference)"]
+        APIService -->|Explicit Cloud Consent| CloudTranslate["Optional Cloud Translation\n(Google / Azure / Gemini)"]
+    end
+
+    APIService -->|Action Cards with Highlighted Proof| WebApp
+    APIService -->|Synthesized Audio Stream .wav| WebApp
+    WebApp -->|Audio Playback & WCAG 2.2 AA Visuals| User
 ```
 
-### Stage Details
+---
 
-1. **Secure Upload & Isolation**:
-   - Validates file signatures (`%PDF-`, `\xFF\xD8\xFF`, `\x89PNG`).
-   - Generates unique internal storage keys (`<uuid>.<ext>`) preventing directory traversal attacks.
-   - Enforces ownership authorization checks on all reads, queries, and deletions.
+## 3. Component Architecture Diagram
 
-2. **Image Quality Gate**:
-   - Evaluates pixel variance via Laplacian edge analysis to detect motion blur or out-of-focus photography.
-   - Evaluates resolution, aspect ratio (for cropped slivers), and glare washout.
-   - Transitions to `NEEDS_RECAPTURE` with human-friendly guidance when critical areas cannot be read.
+```mermaid
+flowchart LR
+    subgraph ClientLayer["Frontend Client Layer (Next.js 15 App Router)"]
+        UI_Home["Home Page (/)"]
+        UI_Upload["Upload Page (/upload)\nFile Picker & Live Camera"]
+        UI_Doc["Document View (/documents/[id])\nAction Cards & Proof Highlight"]
+        UI_Ask["Ask View (/documents/[id]/ask)\nSpoken & Typed Q&A"]
+        UI_History["History View (/history)"]
+        UI_Privacy["Privacy View (/privacy)"]
+        A11yContext["Accessibility Provider\n(Font Scaling, High Contrast, WCAG 2.2)"]
+        APIClient["API Client (`api.ts`)\nSession Sync, Bounded Retry, Polling"]
+    end
 
-3. **Block Segmentation & Provenance**:
-   - Retains exact page numbers and normalized bounding boxes `[ymin, xmin, ymax, xmax]`.
-   - Binds every extracted sentence to its source block.
+    subgraph APILayer["API Gateway & Middleware Layer (FastAPI)"]
+        MainApp["`services/api/main.py`\nFastAPI Routes & CORS"]
+        AuthMiddleware["Session & Token Validator\n(`modules/auth/service.py`)"]
+        ConsentGate["DPDP Purpose Consent Enforcement"]
+        SafeErrors["Production Error Sanitizer\n(Zero Stack Traces in Prod)"]
+    end
 
-4. **Structured Fact Extraction**:
-   - Dates: Normalizes `DD/MM/YYYY`, `DD Month YYYY`, and ISO dates while retaining raw text.
-   - Currency: Identifies Indian denominations (`₹`, `Rs.`, `INR`, Lakhs, Crores) without arbitrary calculations.
-   - Statutory Provisions: Verifies whether the section citation includes the governing statute name. If not, marks as `uncertain` with reason code `UNVERIFIED_STATUTE_NAME`.
-   - Directives: Distinguishes "must" vs "may" instructions.
+    subgraph ServiceLayer["Core Domain Services"]
+        DocPipeline["Document Pipeline Service\n(`modules/documents/service.py`)"]
+        OCREngine["RapidOCR ONNX Engine\n(`modules/ocr/service.py`)"]
+        QualityGate["Quality Evaluator (Laplacian Blur/Glare)"]
+        FactService["Entity Normalizer & Fact Extractor\n(`modules/extraction/fact_service.py`)"]
+        CitationVal["Citation Validator\n(`modules/citations/validator.py`)"]
+        AnswerEngine["Grounded Legal Answering Engine\n(`modules/answers/service.py`)"]
+        GnaniSTT["Gnani STT Adapter (`modules/gnani_stt/adapter.py`)"]
+        GnaniTTS["Gnani TTS Adapter (`modules/gnani_tts/adapter.py`)"]
+    end
 
-5. **Citation Integrity & Safety Gate**:
-   - Rejects any claim that cites a non-existent or foreign block ID.
-   - Identifies conflicting dates across document sections and demotes claims to `uncertain`.
-   - Filters document-based prompt injections (e.g., hidden adversarial instructions attempting to alter system behavior or declare innocence).
+    subgraph PersistenceLayer["Storage & Data Layer"]
+        SQLStore[(SQL Database\nDocuments, TextBlocks, Facts, ActionCards)]
+        BlobStore["Private File Storage\n(Original Files, Rendered Slices, Audio Caches)"]
+    end
+
+    APIClient --> MainApp
+    MainApp --> AuthMiddleware --> ConsentGate
+    ConsentGate --> DocPipeline
+    ConsentGate --> AnswerEngine
+
+    DocPipeline --> QualityGate
+    QualityGate --> OCREngine
+    OCREngine --> FactService
+    FactService --> CitationVal
+    AnswerEngine --> CitationVal
+
+    DocPipeline --> SQLStore
+    DocPipeline --> BlobStore
+    AnswerEngine --> SQLStore
+    AnswerEngine --> GnaniSTT
+    AnswerEngine --> GnaniTTS
+```
 
 ---
 
-## 4. Gnani AI Integration Architecture
+## 4. Document Processing Sequence Diagram
 
-NoticeSaathi connects to Gnani Speech APIs via dedicated server-side adapters:
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Citizen
+    participant Web as Next.js Web App
+    participant API as FastAPI Backend
+    participant Auth as Auth & Consent Module
+    participant DocSvc as Document Pipeline
+    participant OCR as RapidOCR ONNX
+    participant DB as SQL Database
+    participant Store as Private Storage
 
-- **Gnani Prisma v2.5 STT**:
-  - Endpoint: `POST https://api.vachana.ai/stt/v3`
-  - Authentication: `X-API-Key-ID: <GNANI_API_KEY>`
-  - Format: `transcribe` with ITN for numeral/currency conversion.
-  - Transcript confirmation: Presented to user with ability to edit or correct before sending to the evidence engine.
+    Citizen->>Web: Selects notice image or captures camera photo
+    Web->>API: POST /api/v1/documents (file, consent_document_processing=true)
+    API->>Auth: get_current_session(token)
+    Auth-->>API: GuestSession (actor_id, token)
+    API->>Auth: record_consent(actor_id, 'document_processing')
 
-- **Gnani Timbre v2.5 TTS**:
-  - Endpoint: `POST https://api.vachana.ai/api/v1/tts/inference`
-  - Header: `X-API-Key-ID: <GNANI_API_KEY>`
-  - Model: `timbre-v2.5`
-  - Voices: `Lavanya` / `Suhana` (Telugu `te-IN`), `Nalini` (Hindi `hi-IN`), `Kaveri` / `Pranav` (English `en-IN`), `Asmita` (Tamil `ta-IN`), `Saanvi` (Kannada `kn-IN`).
-  - Audio Config: 48kHz / 16kHz Linear PCM mono WAV.
-  - Controls: Speed adjustment (0.85x, 1.0x, 1.15x), replay, stop, and full readable text alternative.
+    API->>Store: Write original file bytes to private storage
+    API->>DB: create_document_record(state='UPLOADED')
 
-- **Offline / Dev Mock Adapter**:
-  - When `GNANI_API_KEY` is not provided, the adapter automatically generates deterministic transcripts and synthesized binary WAV audio, transparently flagging `is_mock: true` in metadata.
+    API->>DocSvc: process_document_pipeline(document_id)
+    DocSvc->>Store: Read file bytes & validate magic bytes
+    DocSvc->>DocSvc: Assess image quality (blur & crop variance)
+
+    alt Image is severely blurred or cropped
+        DocSvc->>DB: Update state='NEEDS_RECAPTURE'
+        DocSvc-->>API: Document (state='NEEDS_RECAPTURE')
+        API-->>Web: 201 Created (state='NEEDS_RECAPTURE', session_token)
+        Web-->>Citizen: Prompt to retake clearly with guidance
+    else Image passes quality threshold
+        DocSvc->>OCR: Extract text blocks and bounding boxes
+        OCR-->>DocSvc: List of TextBlocks with coordinates [ymin, xmin, ymax, xmax]
+        DocSvc->>DB: Persist TextBlocks
+        DocSvc->>DocSvc: Extract candidate facts (amounts, dates, case numbers)
+        DocSvc->>DocSvc: Generate grounded Action Cards with ProofRefs
+        DocSvc->>DB: Persist ActionCards
+        DocSvc->>DB: Update state='READY'
+        DocSvc-->>API: Document (state='READY')
+        API-->>Web: 201 Created (state='READY', headers: X-Session-Token)
+        Web->>Web: Store active session_token in localStorage
+        Web-->>Citizen: Navigate immediately to /documents/[id]
+        Web-->>Citizen: Display Action Cards with clickable [Proof] citations
+    end
+```
 
 ---
 
-## 5. Accessibility Standards (WCAG 2.2 AA)
+## 5. Voice Interaction Sequence Diagram
 
-- **Target Sizing**: All interactive touch targets (buttons, selectors, toggles) are minimum 48px to 56px in height with generous spacing.
-- **Visual Contrast**: Supports default accessible palette and an enhanced High Contrast mode (yellow on pitch black).
-- **Text Scaling**: Provides instant 3-level typography toggle (`Normal`, `Large`, `Extra Large`) without clipping or layout distortion.
-- **Multimodal Equivalence**: No information is audio-only. All spoken explanations have exact text counterparts.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Citizen
+    participant Web as Next.js Web App
+    participant API as FastAPI Backend
+    participant STT as Gnani Prisma STT
+    participant QA as Grounded Q&A Service
+    participant TTS as Gnani Timbre TTS
+    participant DB as SQL Database
 
+    Citizen->>Web: Taps 'Tap to Speak' and asks in Telugu: "విచారణ తేదీ ఎప్పుడు?"
+    Web->>Web: Record audio/wav via browser MediaRecorder
+    Web->>API: POST /api/v1/documents/[id]/voice-turns (audio_file, consent_gnani_stt=true)
+
+    API->>DB: Check affirmative consent for Gnani STT
+    API->>STT: POST https://api.vachana.ai/stt/v3 (question.wav, language_code='te-IN')
+    STT-->>API: { success: true, transcript: "విచారణ తేదీ ఎప్పుడు?" }
+
+    API->>QA: answer_user_question(document_id, transcript, language='te-IN')
+    QA->>DB: Fetch verified document TextBlocks and ExtractedFacts
+    QA->>QA: Check Case F conflict detection (opposing demands/waivers)
+    QA->>QA: Match query intent against verified document facts
+
+    alt Supported by document text
+        QA-->>API: Answer (status='supported', summary_text, proof_refs)
+    else Contradictory document instructions
+        QA-->>API: Answer (status='conflicting', explains both directives)
+    else Legal advice inquiry (e.g., 'Will I go to jail?')
+        QA-->>API: Answer (status='unsupported', statutory limitation disclaimer)
+    end
+
+    API-->>Web: 200 OK (transcript, answer_result)
+    Web-->>Citizen: Display answer text with supporting evidence proof
+
+    alt User taps 'Listen to explanation'
+        Web->>API: POST /api/v1/speech/synthesize (text, language='te-IN', consent_gnani_tts=true)
+        API->>DB: Check affirmative consent for Gnani TTS
+        API->>TTS: POST https://api.vachana.ai/api/v1/tts/inference (text, voice='Lavanya', model='timbre-v2.5')
+        TTS-->>API: Binary audio/wav bytes
+        API-->>Web: 200 OK (Content-Type: audio/wav)
+        Web-->>Citizen: Audio plays smoothly with speed controls (0.85x, 1x, 1.15x)
+    end
+```
+
+---
+
+## 6. Google Cloud Run Deployment Architecture Diagram
+
+```mermaid
+flowchart TD
+    subgraph Client["Citizen Endpoints"]
+        Mobile["Mobile Smartphone Browser"]
+        Desktop["Desktop / Laptop Browser"]
+    end
+
+    subgraph GCP["Google Cloud Platform Environment"]
+        LB["Cloud Load Balancer / Custom Domain SSL"]
+
+        subgraph CloudRunCluster["Serverless Compute (Google Cloud Run)"]
+            WebContainer["notice-saathi-web Container\n(Next.js 15 Standalone Node Runtime)"]
+            APIContainer["notice-saathi-api Container\n(FastAPI Uvicorn Multi-Worker Runtime)"]
+            WorkerJob["retention-worker Scheduled Job\n(Cloud Run Job triggered every 30 mins)"]
+        end
+
+        subgraph ManagedData["Managed State & Secrets"]
+            Postgres[(Cloud SQL for PostgreSQL 16\nMulti-AZ High Availability Database)]
+            GCSBucket["Cloud Storage Bucket (Private)\n`notice-saathi-document-storage`"]
+            SecretMgr["Google Cloud Secret Manager\n(GNANI_API_KEY, SECRET_KEY, DB_PASS)"]
+        end
+    end
+
+    Mobile -->|HTTPS| LB
+    Desktop -->|HTTPS| LB
+    LB -->|Path /*| WebContainer
+    LB -->|Path /api/*| APIContainer
+
+    WebContainer -->|Internal / Public API| APIContainer
+    APIContainer -->|SQLAlchemy Connection Pool| Postgres
+    APIContainer -->|Private Object Reads/Writes| GCSBucket
+    APIContainer -->|Runtime Secret Ingestion| SecretMgr
+
+    WorkerJob -->|Retention Sweep SQL| Postgres
+    WorkerJob -->|Purge Expired Blobs| GCSBucket
+```
+
+---
+
+## 7. Main Repository Directories & Responsibilities
+
+| Directory | Responsibilities | Key Technologies |
+| :--- | :--- | :--- |
+| `apps/web/app/` | Next.js 15 App Router pages: `/`, `/upload`, `/documents/[id]`, `/history`, `/privacy`. | React 19, TypeScript, TailwindCSS v4 |
+| `apps/web/components/` | Accessible UI components: `ActionCardComponent`, `ProofModal`, `Navbar`. | Lucide React, Headless accessible elements |
+| `apps/web/lib/` | Frontend API client (`api.ts`) and Accessibility context (`accessibility.tsx`). | TypeScript, Web Audio API, LocalStorage |
+| `backend/database/` | Database session manager (`session.py`) and schema definitions (`models.py`). | SQLAlchemy 2.0, SQLite / PostgreSQL |
+| `backend/modules/answers/` | Question-answering engine with strict Case F conflict rules and abstentions. | Python 3.12, regex, token validation |
+| `backend/modules/auth/` | Guest session creation, token validation, and DPDP consent tracking. | Cryptographic tokens, granular scopes |
+| `backend/modules/citations/`| Citation integrity engine validating bounding-box coordinate proof. | Python, Bounding Box geometry |
+| `backend/modules/documents/`| Document ingestion, PDF rasterization, and image quality assessment. | PyMuPDF, Pillow, Laplacian variance |
+| `backend/modules/extraction/`| Structured entity and fact extraction (dates, currencies, directives). | Python regex, deterministic parsers |
+| `backend/modules/gnani_stt/`| Gnani Prisma v2.5 Speech-to-Text integration and fallback mock engine. | httpx, multipart form parser |
+| `backend/modules/gnani_tts/`| Gnani Timbre v2.5 Text-to-Speech integration and synthetic WAV generator. | httpx, wave, struct audio synthesis |
+| `backend/modules/ocr/` | Local Optical Character Recognition without external cloud AI dependencies. | RapidOCR ONNX, numpy |
+| `infra/` | Production container definitions and local Docker orchestration. | Dockerfiles, Docker Compose |
+| `scripts/` | Standalone maintenance jobs, including expired document cleanup. | Python scripts, cron entry points |
+| `services/api/` | FastAPI main application entry point, CORS, routes, and error handling. | FastAPI, Uvicorn, Starlette |
+| `tests/` | Comprehensive test suite (unit, integration, security, OCR, translation). | Pytest, pytest-asyncio, PIL fixtures |
+
+---
+
+## 8. Current Local Architecture vs. Production Cloud Run Target
+
+| Architectural Dimension | Current Local Development | Production Target (Google Cloud Run) |
+| :--- | :--- | :--- |
+| **Backend Runtime** | Python 3.12 Uvicorn process on `127.0.0.1:8000` | Google Cloud Run containerized service (`Dockerfile.api`) |
+| **Frontend Runtime** | Node.js Next.js standalone process on `localhost:3000` | Google Cloud Run containerized service (`Dockerfile.web`) |
+| **Database** | Local SQLite (`notice_saathi_v2.db`) | Google Cloud SQL for PostgreSQL 16 with private IP connection |
+| **File Storage** | Local disk directory (`./data/storage`) | Google Cloud Storage (GCS) private bucket with service account IAM |
+| **Secret Management** | Local `.env` file | Google Cloud Secret Manager with IAM secret accessor roles |
+| **Data Retention** | On-demand UI purge + standalone script execution | Automated Cloud Run Job invoked every 30 minutes via Cloud Scheduler |
+| **Speech APIs** | Gnani Prisma STT & Timbre TTS with offline mock fallbacks | Live Gnani AI production credentials via Secret Manager |
+| **CORS Policy** | Permissive local development origins (`localhost:3000`) | Strict production domain origin matching without wildcard |

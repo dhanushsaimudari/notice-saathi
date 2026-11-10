@@ -1,4 +1,6 @@
 import uuid
+import re
+import logging
 from datetime import datetime, timezone
 from typing import List
 from sqlalchemy.orm import Session
@@ -12,6 +14,8 @@ from backend.modules.ocr.service import segment_text_into_blocks, extract_text_b
 from backend.modules.extraction.fact_service import extract_facts_from_blocks
 from backend.modules.answers.service import generate_action_cards_for_document
 
+logger = logging.getLogger("noticesaathi.pipeline")
+
 def create_document_record(
     db: Session,
     owner_id: str,
@@ -21,11 +25,11 @@ def create_document_record(
 ) -> Document:
     # 1. Upload security checks (Magic bytes, extension, size, checksum, safe key)
     validated = validate_upload_bytes(file_bytes, original_filename, declared_media_type)
-    
+
     # 2. Store original privately
     storage_key = validated["storage_key"]
     storage_service.save_original(storage_key, file_bytes)
-    
+
     # 3. Create database entry in UPLOADED state
     doc = Document(
         owner_id=owner_id,
@@ -39,7 +43,7 @@ def create_document_record(
     db.add(doc)
     db.commit()
     db.refresh(doc)
-    
+
     # Create background job record
     job = ProcessingJob(
         document_id=doc.document_id,
@@ -48,7 +52,7 @@ def create_document_record(
     )
     db.add(job)
     db.commit()
-    
+
     return doc
 
 def process_document_pipeline(db: Session, document_id: str) -> Document:
@@ -65,25 +69,39 @@ def process_document_pipeline(db: Session, document_id: str) -> Document:
     doc = db.query(Document).filter(Document.document_id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-        
+
     # Prevent stale background workers from resurrecting a deleted document
-    if doc.state in ["DELETED", "DELETION_REQUESTED"]:
+    if doc.state in ["DELETED", "DELETION_REQUESTED"] or doc.deleted_at is not None:
         raise HTTPException(status_code=400, detail="Cannot process document marked for deletion.")
 
     doc.state = "PROCESSING"
     db.commit()
-    
+
     file_bytes = storage_service.read_original(doc.storage_key)
-    
+
     # Check if image
     if doc.media_type in ["image/jpeg", "image/png"]:
+        logger.info(f"Processing image document {doc.document_id} ({doc.original_filename})")
         # Run real OCR on image bytes
         real_ocr_blocks: List[ExtractedBlock] = extract_text_blocks_from_image(file_bytes, page_index=1)
         combined_text = " ".join(b.text_original for b in real_ocr_blocks)
-        
+
+        # Log raw extracted text for page 1
+        logger.info(f"Page 1/1 OCR extraction complete: {len(real_ocr_blocks)} blocks extracted.")
+        for idx, b in enumerate(real_ocr_blocks):
+            logger.info(f"Page 1 Block [{idx+1}]: '{b.text_original}' (conf: {b.confidence}, bbox: {b.bbox})")
+
+        # Audit captured content features
+        has_tables = any(re.search(r'\d+[\d,]*\.\d{2}', b.text_original) for b in real_ocr_blocks)
+        has_dates = any(re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4}', b.text_original) for b in real_ocr_blocks)
+        has_address = any(re.search(r'\b\d{6}\b|flat|plot|road|street|residency', b.text_original, re.I) for b in real_ocr_blocks)
+        has_instructions = any(re.search(r'visit:|citizen app|payment|scan to pay', b.text_original, re.I) for b in real_ocr_blocks)
+        has_small_print = any(re.search(r'assistance|helpline|0866|mon\s*-\s*sat', b.text_original, re.I) for b in real_ocr_blocks)
+        logger.info(f"Page 1 Feature Audit: tables/amounts={has_tables}, dates={has_dates}, address={has_address}, instructions={has_instructions}, small_print={has_small_print}")
+
         # Assess image quality considering OCR text output
         quality = assess_image_quality(file_bytes, extracted_text_sample=combined_text)
-        
+
         # Save Page record
         page = DocumentPage(
             document_id=doc.document_id,
@@ -97,14 +115,14 @@ def process_document_pipeline(db: Session, document_id: str) -> Document:
         db.add(page)
         db.commit()
         db.refresh(page)
-        
+
         # If quality gate fails (and no readable words could be found), mark NEEDS_RECAPTURE
         if not quality.is_readable:
             doc.state = "NEEDS_RECAPTURE"
             doc.page_count = 1
             db.commit()
             return doc
-            
+
         for b in real_ocr_blocks:
             tb = TextBlock(
                 block_id=b.block_id,
@@ -120,15 +138,15 @@ def process_document_pipeline(db: Session, document_id: str) -> Document:
             db.add(tb)
         db.commit()
         doc.page_count = 1
-        
+
     elif doc.media_type == "application/pdf":
         extracted_pages = extract_pdf_data(file_bytes)
         doc.page_count = len(extracted_pages)
-        
+
         for p in extracted_pages:
             p_text = p.text.strip()
             blocks_to_save: List[ExtractedBlock] = []
-            
+
             if p_text:
                 # 1. Native digital PDF text extraction
                 blocks_to_save = segment_text_into_blocks(p_text, page_index=p.page_index)
@@ -158,7 +176,11 @@ def process_document_pipeline(db: Session, document_id: str) -> Document:
             db.add(page)
             db.commit()
             db.refresh(page)
-            
+
+            logger.info(f"PDF Page {p.page_index}/{len(extracted_pages)}: {len(blocks_to_save)} blocks saved (state={quality_state})")
+            for idx, b in enumerate(blocks_to_save):
+                logger.debug(f"PDF Page {p.page_index} Block [{idx+1}]: '{b.text_original}'")
+
             for b in blocks_to_save:
                 tb = TextBlock(
                     block_id=b.block_id,
@@ -173,7 +195,7 @@ def process_document_pipeline(db: Session, document_id: str) -> Document:
                 )
                 db.add(tb)
             db.commit()
-            
+
     # Extract Structured Candidate Facts
     all_blocks = db.query(TextBlock).filter(TextBlock.document_id == doc.document_id).all()
     extracted_facts = extract_facts_from_blocks(all_blocks)
@@ -189,13 +211,13 @@ def process_document_pipeline(db: Session, document_id: str) -> Document:
         )
         db.add(fact)
     db.commit()
-    
+
     # Generate Action Cards with Proof
     cards = generate_action_cards_for_document(db, doc.document_id)
     for c in cards:
         db.add(c)
     db.commit()
-    
+
     doc.state = "READY"
     db.commit()
     db.refresh(doc)
@@ -205,26 +227,26 @@ def delete_document_cascade(db: Session, document_id: str) -> None:
     doc = db.query(Document).filter(Document.document_id == document_id).first()
     if not doc:
         return
-        
+
     doc.state = "DELETION_REQUESTED"
     db.commit()
-    
+
     # Collect page and audio keys
     pages = db.query(DocumentPage).filter(DocumentPage.document_id == document_id).all()
     page_keys = [p.derived_image_key for p in pages if p.derived_image_key]
-    
+
     # Remove files from private storage
     storage_service.delete_document_assets(doc.storage_key, page_keys=page_keys)
-    
+
     # Mark deleted in DB (or remove cascade)
     doc.deleted_at = datetime.now(timezone.utc)
     doc.state = "DELETED"
-    
+
     # Delete child rows
     db.query(ActionCard).filter(ActionCard.document_id == document_id).delete()
     db.query(ExtractedFact).filter(ExtractedFact.document_id == document_id).delete()
     db.query(TextBlock).filter(TextBlock.document_id == document_id).delete()
     db.query(DocumentPage).filter(DocumentPage.document_id == document_id).delete()
     db.query(ProcessingJob).filter(ProcessingJob.document_id == document_id).delete()
-    
+
     db.commit()

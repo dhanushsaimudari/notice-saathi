@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { SupportedLanguage, translations, Translations } from "./i18n";
 
-type TextSize = "normal" | "large" | "extra-large";
+export type TextSize = "normal" | "large" | "extra-large";
 
 interface AccessibilityContextType {
   language: SupportedLanguage;
@@ -22,43 +22,78 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
   const [textSize, setTextSizeState] = useState<TextSize>("large");
   const [highContrast, setHighContrastState] = useState<boolean>(false);
 
+  // Load user preferences from localStorage on initial render
   useEffect(() => {
-    const savedLang = localStorage.getItem("ns_lang") as SupportedLanguage;
-    if (savedLang && translations[savedLang]) {
-      setLanguageState(savedLang);
-    }
-    const savedTextSize = localStorage.getItem("ns_text_size") as TextSize;
-    if (savedTextSize) {
-      setTextSizeState(savedTextSize);
-    }
-    const savedHC = localStorage.getItem("ns_high_contrast");
-    if (savedHC !== null) {
-      setHighContrastState(savedHC === "true");
+    try {
+      const savedLang = localStorage.getItem("ns_lang") as SupportedLanguage;
+      if (savedLang && translations[savedLang]) {
+        setLanguageState(savedLang);
+      }
+      const savedTextSize = localStorage.getItem("ns_text_size") as TextSize;
+      if (savedTextSize === "normal" || savedTextSize === "large" || savedTextSize === "extra-large") {
+        setTextSizeState(savedTextSize);
+      }
+      const savedHC = localStorage.getItem("ns_high_contrast");
+      if (savedHC !== null) {
+        setHighContrastState(savedHC === "true");
+      }
+    } catch (e) {
+      // localStorage may fail in restricted/incognito environments
+      console.warn("NoticeSaathi: Failed to read accessibility preferences from storage", e);
     }
   }, []);
 
+  // Sync text size to the root html element so that all rem typography scales globally
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-text-size", textSize);
+    }
+  }, [textSize]);
+
+  // Sync high contrast mode to the root html element
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      if (highContrast) {
+        document.documentElement.classList.add("high-contrast");
+        document.documentElement.setAttribute("data-high-contrast", "true");
+      } else {
+        document.documentElement.classList.remove("high-contrast");
+        document.documentElement.removeAttribute("data-high-contrast");
+      }
+    }
+  }, [highContrast]);
+
   const setLanguage = (lang: SupportedLanguage) => {
     setLanguageState(lang);
-    localStorage.setItem("ns_lang", lang);
+    try {
+      localStorage.setItem("ns_lang", lang);
+    } catch {}
   };
 
   const setTextSize = (size: TextSize) => {
     setTextSizeState(size);
-    localStorage.setItem("ns_text_size", size);
+    try {
+      localStorage.setItem("ns_text_size", size);
+    } catch {}
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-text-size", size);
+    }
   };
 
   const setHighContrast = (hc: boolean) => {
     setHighContrastState(hc);
-    localStorage.setItem("ns_high_contrast", String(hc));
+    try {
+      localStorage.setItem("ns_high_contrast", String(hc));
+    } catch {}
   };
 
   const t = translations[language] || translations["te-IN"];
 
-  // Apply root CSS classes for accessibility sizing and contrast
+  // Apply root CSS classes for accessibility background, contrast, and sizing
   const containerClasses = [
     highContrast ? "high-contrast bg-black text-yellow-300" : "bg-slate-50 text-slate-900",
     textSize === "extra-large" ? "text-xl leading-relaxed" : textSize === "large" ? "text-lg leading-normal" : "text-base",
-    "min-h-screen transition-colors duration-200"
+    "min-h-screen transition-colors duration-200 w-full overflow-x-hidden"
   ].join(" ");
 
   return (
@@ -73,7 +108,9 @@ export function AccessibilityProvider({ children }: { children: React.ReactNode 
         t,
       }}
     >
-      <div className={containerClasses}>{children}</div>
+      <div className={containerClasses} data-text-size={textSize}>
+        {children}
+      </div>
     </AccessibilityContext.Provider>
   );
 }
@@ -85,4 +122,3 @@ export function useAccessibility() {
   }
   return context;
 }
-

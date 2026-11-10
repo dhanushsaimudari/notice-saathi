@@ -87,10 +87,19 @@ class ApiClient {
     return data;
   }
 
-  async uploadDocument(file: File): Promise<{ document_id: string; state: string; page_count: number }> {
+  async uploadDocument(file: File, consentDocumentProcessing: boolean = true): Promise<{
+    document_id: string;
+    state: string;
+    page_count?: number;
+    session_token?: string;
+    quality_metrics?: any;
+  }> {
     await this.ensureSession();
     const formData = new FormData();
     formData.append("file", file);
+    if (consentDocumentProcessing) {
+      formData.append("consent_document_processing", "true");
+    }
 
     const res = await fetch(`${API_BASE}/documents`, {
       method: "POST",
@@ -102,7 +111,12 @@ class ApiClient {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData?.detail?.message || "Document upload failed");
     }
-    return res.json();
+    const data = await res.json();
+    const activeToken = res.headers.get("X-Session-Token") || data.session_token;
+    if (activeToken && typeof window !== "undefined") {
+      localStorage.setItem("ns_session_token", activeToken);
+    }
+    return data;
   }
 
   async listDocuments(): Promise<DocumentSummary[]> {
@@ -111,6 +125,10 @@ class ApiClient {
       headers: this.getHeaders(),
     });
     if (!res.ok) throw new Error("Failed to list documents");
+    const activeToken = res.headers.get("X-Session-Token");
+    if (activeToken && typeof window !== "undefined") {
+      localStorage.setItem("ns_session_token", activeToken);
+    }
     return res.json();
   }
 
@@ -120,6 +138,10 @@ class ApiClient {
       headers: this.getHeaders(),
     });
     if (!res.ok) throw new Error("Document not found");
+    const activeToken = res.headers.get("X-Session-Token");
+    if (activeToken && typeof window !== "undefined") {
+      localStorage.setItem("ns_session_token", activeToken);
+    }
     return res.json();
   }
 
@@ -128,7 +150,19 @@ class ApiClient {
     const res = await fetch(`${API_BASE}/documents/${documentId}/status`, {
       headers: this.getHeaders(),
     });
-    if (!res.ok) throw new Error("Failed to fetch document status");
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      const code = errJson?.detail?.code || "";
+      const msg = errJson?.detail?.message || "Failed to fetch document status";
+      const err = new Error(msg);
+      (err as any).statusCode = res.status;
+      (err as any).code = code;
+      throw err;
+    }
+    const activeToken = res.headers.get("X-Session-Token");
+    if (activeToken && typeof window !== "undefined") {
+      localStorage.setItem("ns_session_token", activeToken);
+    }
     return res.json();
   }
 
@@ -178,6 +212,7 @@ class ApiClient {
     const formData = new FormData();
     formData.append("audio_file", audioBlob, "question.wav");
     formData.append("language_code", language);
+    formData.append("consent_gnani_stt", "true");
 
     const res = await fetch(`${API_BASE}/documents/${documentId}/voice-turns`, {
       method: "POST",

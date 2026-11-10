@@ -62,7 +62,7 @@ class GnaniSTTAdapter:
         }
         
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(timeout=httpx.Timeout(connect=4.0, read=25.0, write=5.0, pool=4.0)) as client:
                 response = client.post(
                     self.endpoint,
                     headers=headers,
